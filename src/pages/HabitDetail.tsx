@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Star, Calendar, Edit2, Eye, EyeOff, Trash2 } from 'lucide-react';
 import BottomNav from '../components/BottomNav';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Calendar as CalendarUI } from '@/components/ui/calendar';
 
 // Define appropriate types for our habits
@@ -17,10 +17,12 @@ type BaseHabitDetail = {
 }
 
 type PersonalHabitDetail = BaseHabitDetail & {
+  isShared: false;
   isPrivate: boolean;
 }
 
 type SharedHabitDetail = BaseHabitDetail & {
+  isShared: true;
   jointStreak: number;
   partnerName: string;
   partnerCompletedDates: string[];
@@ -82,14 +84,26 @@ const habitDetails: Record<string, HabitDetailType> = {
 const HabitDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const habit = id ? habitDetails[id as keyof typeof habitDetails] : null;
+  
+  // Get the habit safely - key may not exist in the record
+  const habit = id ? habitDetails[id] || null : null;
   
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [habitName, setHabitName] = useState(habit?.name || '');
   const [isPrivate, setIsPrivate] = useState(
-    !habit?.isShared && 'isPrivate' in habit ? habit.isPrivate : false
+    habit && !habit.isShared ? (habit as PersonalHabitDetail).isPrivate : false
   );
+  
+  // Type guard to check if habit is shared
+  const isSharedHabit = (habit: HabitDetailType | null): habit is SharedHabitDetail => {
+    return habit?.isShared === true;
+  };
+  
+  // Type guard to check if habit is personal
+  const isPersonalHabit = (habit: HabitDetailType | null): habit is PersonalHabitDetail => {
+    return habit?.isShared === false;
+  };
   
   const handleGoBack = () => {
     navigate(-1);
@@ -106,23 +120,25 @@ const HabitDetail = () => {
     navigate('/habits');
   };
   
-  // Type guard to check if habit is shared
-  const isSharedHabit = (habit: HabitDetailType | null): habit is SharedHabitDetail => {
-    return habit?.isShared === true;
-  };
-  
-  // Type guard to check if habit is personal
-  const isPersonalHabit = (habit: HabitDetailType | null): habit is PersonalHabitDetail => {
-    return habit?.isShared === false;
-  };
-  
+  // If habit is not found, show error UI
   if (!habit) {
     return (
       <div className="app-container p-4">
-        <p>Habit not found.</p>
-        <button onClick={handleGoBack} className="button-primary mt-4">
-          Go Back
-        </button>
+        <header className="sticky top-0 bg-couples-background pt-8 pb-4">
+          <div className="flex items-center">
+            <button onClick={handleGoBack} className="mr-2">
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <h1 className="text-2xl font-medium">Habit not found</h1>
+          </div>
+        </header>
+        <div className="mt-8 text-center">
+          <p>The habit you're looking for doesn't exist or has been deleted.</p>
+          <Button onClick={() => navigate('/habits')} className="mt-4">
+            Go to All Habits
+          </Button>
+        </div>
+        <BottomNav />
       </div>
     );
   }
@@ -151,7 +167,7 @@ const HabitDetail = () => {
             <Star className="h-5 w-5 text-couples-accent fill-couples-accent" />
             {isSharedHabit(habit) ? (
               <>
-                <h2 className="text-lg font-medium">Joint Streak: {habit.jointStreak || 0} days</h2>
+                <h2 className="text-lg font-medium">Joint Streak: {habit.jointStreak} days</h2>
               </>
             ) : (
               <>
@@ -165,7 +181,7 @@ const HabitDetail = () => {
               <p>You've completed this {habit.completedDates.length} times</p>
               <p>{habit.partnerName} has completed this {habit.partnerCompletedDates.length} times</p>
               <p className="text-couples-completed mt-1">
-                You both kept this up for {habit.jointStreak || 0} consecutive days!
+                You both kept this up for {habit.jointStreak} consecutive days!
               </p>
             </div>
           )}
@@ -235,6 +251,7 @@ const HabitDetail = () => {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Edit Habit</DialogTitle>
+            <DialogDescription>Make changes to your habit</DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4">
@@ -294,6 +311,7 @@ const HabitDetail = () => {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Delete Habit</DialogTitle>
+            <DialogDescription>This action cannot be undone.</DialogDescription>
           </DialogHeader>
           
           <p>Are you sure you want to delete "{habit.name}"? This action cannot be undone.</p>

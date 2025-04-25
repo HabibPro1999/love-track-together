@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { Plus } from 'lucide-react';
 import BottomNav from '../components/BottomNav';
 import HabitItem from '../components/HabitItem';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -65,11 +65,11 @@ const Habits = () => {
 
   const handleAddHabit = () => {
     if (newHabitName.trim()) {
-      let newHabit: Habit;
+      const now = Date.now().toString();
       
       if (newHabitType === 'shared') {
-        newHabit = {
-          id: Date.now().toString(),
+        const newHabit: SharedHabit = {
+          id: now,
           name: newHabitName.trim(),
           completed: false,
           isShared: true,
@@ -77,18 +77,19 @@ const Habits = () => {
           partnerName: demoPartner.name,
           type: 'shared',
         };
+        setHabits([...habits, newHabit]);
       } else {
-        newHabit = {
-          id: Date.now().toString(),
+        const newHabit: PersonalHabit = {
+          id: now,
           name: newHabitName.trim(),
           completed: false,
           isShared: false,
           type: 'personal',
           isPrivate: newHabitPrivate,
         };
+        setHabits([...habits, newHabit]);
       }
       
-      setHabits([...habits, newHabit]);
       setNewHabitName('');
       setNewHabitType('personal');
       setNewHabitPrivate(false);
