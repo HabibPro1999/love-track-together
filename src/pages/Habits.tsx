@@ -15,7 +15,33 @@ const demoPartner = {
   name: 'Emma',
 };
 
-const initialHabits = [
+// Define proper types for habits
+type HabitType = 'personal' | 'shared';
+
+interface BaseHabit {
+  id: string;
+  name: string;
+  completed: boolean;
+  isShared: boolean;
+  type: HabitType;
+}
+
+interface PersonalHabit extends BaseHabit {
+  isShared: false;
+  type: 'personal';
+  isPrivate?: boolean;
+}
+
+interface SharedHabit extends BaseHabit {
+  isShared: true;
+  type: 'shared';
+  partnerCompleted: boolean;
+  partnerName: string;
+}
+
+type Habit = PersonalHabit | SharedHabit;
+
+const initialHabits: Habit[] = [
   { id: '1', name: 'Morning Run', completed: false, isShared: false, type: 'personal' },
   { id: '2', name: 'Drink Water', completed: true, isShared: false, type: 'personal' },
   { id: '3', name: 'Cook Dinner', completed: false, isShared: true, partnerCompleted: true, partnerName: demoPartner.name, type: 'shared' },
@@ -24,10 +50,10 @@ const initialHabits = [
 ];
 
 const Habits = () => {
-  const [habits, setHabits] = useState(initialHabits);
+  const [habits, setHabits] = useState<Habit[]>(initialHabits);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [newHabitName, setNewHabitName] = useState('');
-  const [newHabitType, setNewHabitType] = useState('personal');
+  const [newHabitType, setNewHabitType] = useState<HabitType>('personal');
   const [newHabitPrivate, setNewHabitPrivate] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
   
@@ -39,16 +65,28 @@ const Habits = () => {
 
   const handleAddHabit = () => {
     if (newHabitName.trim()) {
-      const newHabit = {
-        id: Date.now().toString(),
-        name: newHabitName.trim(),
-        completed: false,
-        isShared: newHabitType === 'shared',
-        partnerCompleted: false,
-        partnerName: demoPartner.name,
-        type: newHabitType,
-        isPrivate: newHabitType === 'personal' && newHabitPrivate,
-      };
+      let newHabit: Habit;
+      
+      if (newHabitType === 'shared') {
+        newHabit = {
+          id: Date.now().toString(),
+          name: newHabitName.trim(),
+          completed: false,
+          isShared: true,
+          partnerCompleted: false,
+          partnerName: demoPartner.name,
+          type: 'shared',
+        };
+      } else {
+        newHabit = {
+          id: Date.now().toString(),
+          name: newHabitName.trim(),
+          completed: false,
+          isShared: false,
+          type: 'personal',
+          isPrivate: newHabitPrivate,
+        };
+      }
       
       setHabits([...habits, newHabit]);
       setNewHabitName('');
@@ -114,8 +152,8 @@ const Habits = () => {
               name={habit.name}
               completed={habit.completed}
               isShared={habit.isShared}
-              partnerCompleted={habit.partnerCompleted}
-              partnerName={habit.partnerName}
+              partnerCompleted={habit.isShared ? habit.partnerCompleted : undefined}
+              partnerName={habit.isShared ? habit.partnerName : undefined}
               onToggle={() => toggleHabit(habit.id)}
             />
           )) : (
@@ -158,7 +196,7 @@ const Habits = () => {
               <Label>Type</Label>
               <RadioGroup 
                 value={newHabitType} 
-                onValueChange={setNewHabitType}
+                onValueChange={(value: HabitType) => setNewHabitType(value)}
                 className="flex space-x-2 mt-2"
               >
                 <div className="flex items-center space-x-2">

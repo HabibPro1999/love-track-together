@@ -7,8 +7,30 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Calendar as CalendarUI } from '@/components/ui/calendar';
 
-// Demo data
-const habitDetails = {
+// Define appropriate types for our habits
+type BaseHabitDetail = {
+  id: string;
+  name: string;
+  streak: number;
+  isShared: boolean;
+  completedDates: string[];
+}
+
+type PersonalHabitDetail = BaseHabitDetail & {
+  isPrivate: boolean;
+}
+
+type SharedHabitDetail = BaseHabitDetail & {
+  jointStreak: number;
+  partnerName: string;
+  partnerCompletedDates: string[];
+  bothCompletedDates: string[];
+}
+
+type HabitDetailType = PersonalHabitDetail | SharedHabitDetail;
+
+// Demo data with properly typed objects
+const habitDetails: Record<string, HabitDetailType> = {
   '1': {
     id: '1',
     name: 'Morning Run',
@@ -65,7 +87,9 @@ const HabitDetail = () => {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [habitName, setHabitName] = useState(habit?.name || '');
-  const [isPrivate, setIsPrivate] = useState(habit?.isPrivate || false);
+  const [isPrivate, setIsPrivate] = useState(
+    !habit?.isShared && 'isPrivate' in habit ? habit.isPrivate : false
+  );
   
   const handleGoBack = () => {
     navigate(-1);
@@ -80,6 +104,16 @@ const HabitDetail = () => {
     // In a real app, this would delete the habit
     setShowDeleteDialog(false);
     navigate('/habits');
+  };
+  
+  // Type guard to check if habit is shared
+  const isSharedHabit = (habit: HabitDetailType | null): habit is SharedHabitDetail => {
+    return habit?.isShared === true;
+  };
+  
+  // Type guard to check if habit is personal
+  const isPersonalHabit = (habit: HabitDetailType | null): habit is PersonalHabitDetail => {
+    return habit?.isShared === false;
   };
   
   if (!habit) {
@@ -104,7 +138,7 @@ const HabitDetail = () => {
             <ArrowLeft className="h-5 w-5" />
           </button>
           <h1 className="text-2xl font-medium">{habit.name}</h1>
-          {habit.isPrivate && (
+          {isPersonalHabit(habit) && habit.isPrivate && (
             <EyeOff className="h-4 w-4 ml-2 text-couples-text/50" />
           )}
         </div>
@@ -115,7 +149,7 @@ const HabitDetail = () => {
         <section className="bg-white rounded-lg shadow-sm p-5 mb-6">
           <div className="flex items-center gap-2 mb-2">
             <Star className="h-5 w-5 text-couples-accent fill-couples-accent" />
-            {habit.isShared ? (
+            {isSharedHabit(habit) ? (
               <>
                 <h2 className="text-lg font-medium">Joint Streak: {habit.jointStreak || 0} days</h2>
               </>
@@ -126,7 +160,7 @@ const HabitDetail = () => {
             )}
           </div>
           
-          {habit.isShared && (
+          {isSharedHabit(habit) && (
             <div className="text-sm text-couples-text mt-2">
               <p>You've completed this {habit.completedDates.length} times</p>
               <p>{habit.partnerName} has completed this {habit.partnerCompletedDates.length} times</p>
@@ -153,7 +187,7 @@ const HabitDetail = () => {
               className="pointer-events-auto"
             />
             
-            {habit.isShared && (
+            {isSharedHabit(habit) && (
               <div className="mt-4 flex items-center justify-center gap-6 text-sm">
                 <div className="flex items-center gap-1">
                   <div className="h-3 w-3 rounded-full bg-couples-accent"></div>
