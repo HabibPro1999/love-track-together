@@ -86,7 +86,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      create_couple_with_code: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          couple_id: string
+          code: string
+        }[]
+      }
+      generate_unique_couple_code: {
+        Args: { length?: number }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never

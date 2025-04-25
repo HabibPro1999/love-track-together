@@ -2,24 +2,130 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Heart, Copy } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { toast } from '@/components/ui/use-toast';
+import { Button } from '@/components/ui/button';
 
 const ConnectPartner = () => {
   const [method, setMethod] = useState<'code' | 'search'>('code');
   const [partnerCode, setPartnerCode] = useState('');
   const [partnerUsername, setPartnerUsername] = useState('');
-  const [yourCode] = useState('LV27B39'); // Demo generated code
+  const [generatedCode, setGeneratedCode] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { user } = useAuth();
 
-  const handleConnect = (e: React.FormEvent) => {
+  const generateOwnCode = async () => {
+    if (!user) {
+      toast({
+        variant: "destructive",
+        title: "Not Logged In",
+        description: "Please log in to generate a connection code"
+      });
+      return;
+    }
+
+    try {
+      // Call the Supabase function to create a couple and generate a code
+      const { data, error } = await supabase.rpc('create_couple_with_code');
+      
+      if (error) throw error;
+      
+      if (data && data.length > 0) {
+        const coupleId = data[0].couple_id;
+        const code = data[0].code;
+
+        // Add current user to the couple
+        const { error: memberError } = await supabase
+          .from('couple_members')
+          .insert({
+            couple_id: coupleId,
+            user_id: user.id
+          });
+
+        if (memberError) throw memberError;
+
+        setGeneratedCode(code);
+        toast({
+          title: "Code Generated",
+          description: `Your connection code is ${code}`
+        });
+      }
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error Generating Code",
+        description: "Failed to generate connection code"
+      });
+      console.error(error);
+    }
+  };
+
+  const connectWithPartnerCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    // In a real app, this would verify the code or search for the username
-    // For demo purposes, we'll just navigate to home
-    navigate('/home');
+    
+    if (!user) {
+      toast({
+        variant: "destructive",
+        title: "Not Logged In",
+        description: "Please log in to connect with a partner"
+      });
+      return;
+    }
+
+    try {
+      // Check if the code exists
+      const { data: coupleData, error: coupleError } = await supabase
+        .from('couples')
+        .select('id')
+        .eq('code', partnerCode)
+        .single();
+
+      if (coupleError) throw coupleError;
+
+      if (!coupleData) {
+        toast({
+          variant: "destructive",
+          title: "Invalid Code",
+          description: "The partner code you entered does not exist"
+        });
+        return;
+      }
+
+      // Add current user to the existing couple
+      const { error: memberError } = await supabase
+        .from('couple_members')
+        .insert({
+          couple_id: coupleData.id,
+          user_id: user.id
+        });
+
+      if (memberError) throw memberError;
+
+      toast({
+        title: "Connected",
+        description: "Successfully connected with your partner"
+      });
+
+      navigate('/home');
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Connection Error",
+        description: "Failed to connect with partner"
+      });
+      console.error(error);
+    }
   };
 
   const copyCodeToClipboard = () => {
-    navigator.clipboard.writeText(yourCode);
-    // Would show a toast here in a real app
+    if (generatedCode) {
+      navigator.clipboard.writeText(generatedCode);
+      toast({
+        title: "Code Copied",
+        description: "Your connection code has been copied to clipboard"
+      });
+    }
   };
 
   return (
@@ -64,19 +170,33 @@ const ConnectPartner = () => {
           {method === 'code' ? (
             <div className="space-y-4">
               <div className="bg-couples-backgroundAlt p-4 rounded-lg text-center">
-                <p className="text-sm text-couples-text/70 mb-2">Your partner code</p>
+                <p className="text-sm text-couples-text/70 mb-2">
+                  {generatedCode ? 'Your partner code' : 'Generate your code'}
+                </p>
                 <div className="flex items-center justify-center space-x-2">
-                  <span className="text-xl font-medium">{yourCode}</span>
-                  <button 
-                    onClick={copyCodeToClipboard}
-                    className="text-couples-accent hover:text-couples-accent/80"
-                  >
-                    <Copy className="h-4 w-4" />
-                  </button>
+                  {generatedCode ? (
+                    <>
+                      <span className="text-xl font-medium">{generatedCode}</span>
+                      <button 
+                        onClick={copyCodeToClipboard}
+                        className="text-couples-accent hover:text-couples-accent/80"
+                      >
+                        <Copy className="h-4 w-4" />
+                      </button>
+                    </>
+                  ) : (
+                    <Button 
+                      onClick={generateOwnCode}
+                      variant="secondary"
+                      className="w-full"
+                    >
+                      Generate Code
+                    </Button>
+                  )}
                 </div>
               </div>
               
-              <form onSubmit={handleConnect}>
+              <form onSubmit={connectWithPartnerCode}>
                 <label htmlFor="partnerCode" className="block text-sm font-medium mb-1">
                   Enter your partner's code
                 </label>
@@ -99,7 +219,7 @@ const ConnectPartner = () => {
               </form>
             </div>
           ) : (
-            <form onSubmit={handleConnect} className="space-y-4">
+            <form onSubmit={connectWithPartnerCode} className="space-y-4">
               <div>
                 <label htmlFor="partnerUsername" className="block text-sm font-medium mb-1">
                   Search by name or email
