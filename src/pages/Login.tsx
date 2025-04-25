@@ -1,26 +1,26 @@
-
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Heart } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { toast } from '@/components/ui/use-toast';
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const navigate = useNavigate();
+  const { signIn } = useAuth();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Simple validation
-    if (!email || !password) {
-      setError('Please fill in all fields');
-      return;
+    try {
+      await signIn(email, password);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error signing in",
+        description: error instanceof Error ? error.message : 'An error occurred'
+      });
     }
-    
-    // For demo purposes, we'll just simulate a successful login
-    // In a real app, this would verify credentials with a backend
-    navigate('/home');
   };
 
   return (
@@ -36,12 +36,6 @@ const Login = () => {
           <p className="text-couples-text/70 mt-2">Log in to continue your journey together</p>
         </div>
         
-        {error && (
-          <div className="bg-red-50 text-red-500 p-3 rounded-lg mb-4">
-            {error}
-          </div>
-        )}
-        
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="email" className="block text-sm font-medium mb-1">
@@ -54,6 +48,7 @@ const Login = () => {
               onChange={(e) => setEmail(e.target.value)}
               className="input-field"
               placeholder="your.email@example.com"
+              required
             />
           </div>
           
@@ -68,6 +63,7 @@ const Login = () => {
               onChange={(e) => setPassword(e.target.value)}
               className="input-field"
               placeholder="••••••••"
+              required
             />
           </div>
           

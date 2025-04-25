@@ -1,26 +1,27 @@
-
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Heart } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { toast } from '@/components/ui/use-toast';
 
 const Signup = () => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const navigate = useNavigate();
+  const { signUp } = useAuth();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Simple validation
-    if (!name || !email || !password) {
-      setError('Please fill in all fields');
-      return;
+    try {
+      await signUp(email, password, name);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error signing up",
+        description: error instanceof Error ? error.message : 'An error occurred'
+      });
     }
-    
-    // For demo purposes, navigate to connect partner page
-    navigate('/connect-partner');
   };
 
   return (
@@ -36,12 +37,6 @@ const Signup = () => {
           <p className="text-couples-text/70 mt-2">Start your journey together</p>
         </div>
         
-        {error && (
-          <div className="bg-red-50 text-red-500 p-3 rounded-lg mb-4">
-            {error}
-          </div>
-        )}
-        
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="name" className="block text-sm font-medium mb-1">
@@ -54,6 +49,7 @@ const Signup = () => {
               onChange={(e) => setName(e.target.value)}
               className="input-field"
               placeholder="John"
+              required
             />
           </div>
           
@@ -68,6 +64,7 @@ const Signup = () => {
               onChange={(e) => setEmail(e.target.value)}
               className="input-field"
               placeholder="your.email@example.com"
+              required
             />
           </div>
           
@@ -82,6 +79,8 @@ const Signup = () => {
               onChange={(e) => setPassword(e.target.value)}
               className="input-field"
               placeholder="••••••••"
+              required
+              minLength={6}
             />
           </div>
           
