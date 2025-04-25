@@ -1,132 +1,194 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Heart, Copy } from 'lucide-react';
+import { Heart, Copy, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { toast } from '@/components/ui/use-toast';
+import { toast as sonnerToast } from "sonner"
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 const ConnectPartner = () => {
-  const [method, setMethod] = useState<'code' | 'search'>('code');
+  const [activeTab, setActiveTab] = useState<'generate' | 'useCode'>('generate');
   const [partnerCode, setPartnerCode] = useState('');
-  const [partnerUsername, setPartnerUsername] = useState('');
   const [generatedCode, setGeneratedCode] = useState<string | null>(null);
+  const [isGeneratingCode, setIsGeneratingCode] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
   const navigate = useNavigate();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  const { data: existingCoupleData, isLoading: isLoadingExistingCode } = useQuery({
+    queryKey: ['existingCoupleCode', user?.id],
+    queryFn: async () => {
+      if (!user) return null;
+      const { data: memberData } = await supabase
+        .from('couple_members')
+        .select('couple_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (!memberData) return null;
+
+      const { data: coupleData, error: coupleError } = await supabase
+        .from('couples')
+        .select('code')
+        .eq('id', memberData.couple_id)
+        .single();
+
+      if (coupleError) {
+        console.error('Error fetching existing couple code:', coupleError);
+        return null;
+      }
+      return coupleData;
+    },
+    enabled: !!user,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  useEffect(() => {
+    if (existingCoupleData?.code) {
+      setGeneratedCode(existingCoupleData.code);
+    }
+  }, [existingCoupleData]);
 
   const generateOwnCode = async () => {
     if (!user) {
-      toast({
-        variant: "destructive",
-        title: "Not Logged In",
-        description: "Please log in to generate a connection code"
-      });
+      sonnerToast.error("Not Logged In", { description: "Please log in first." });
       return;
     }
+    if (generatedCode) return;
 
+    setIsGeneratingCode(true);
     try {
-      // Call the Supabase function to create a couple and generate a code
       const { data, error } = await supabase.rpc('create_couple_with_code');
-      
+
       if (error) throw error;
-      
+
       if (data && data.length > 0) {
         const coupleId = data[0].couple_id;
         const code = data[0].code;
 
-        // Add current user to the couple
         const { error: memberError } = await supabase
           .from('couple_members')
-          .insert({
-            couple_id: coupleId,
-            user_id: user.id
+          .insert({ couple_id: coupleId, user_id: user.id })
+          .select();
+
+        if (memberError?.message.includes('check constraint') || memberError?.message.includes('security policy')) {
+          sonnerToast.error("Permission Denied", {
+            description: "Could not add you to the couple. Please check permissions."
           });
+          await supabase.from('couples').delete().eq('id', coupleId);
+          return;
+        } else if (memberError) {
+          if (memberError.code === '23505') {
+            sonnerToast.info("Already Connected", { description: "You seem to be already part of a couple." });
+            queryClient.invalidateQueries({ queryKey: ['existingCoupleCode', user?.id] });
+          } else {
+            throw memberError;
+          }
+        }
 
-        if (memberError) throw memberError;
-
-        setGeneratedCode(code);
-        toast({
-          title: "Code Generated",
-          description: `Your connection code is ${code}`
-        });
+        if (!memberError) {
+          setGeneratedCode(code);
+          sonnerToast.success("Code Generated!", { description: `Your connection code is ${code}` });
+          queryClient.invalidateQueries({ queryKey: ['existingCoupleCode', user?.id] });
+        }
       }
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Error Generating Code",
-        description: "Failed to generate connection code"
+    } catch (error: any) {
+      sonnerToast.error("Error Generating Code", {
+        description: error?.message || "Failed to generate connection code."
       });
       console.error(error);
+    } finally {
+      setIsGeneratingCode(false);
     }
   };
 
   const connectWithPartnerCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!user) {
-      toast({
-        variant: "destructive",
-        title: "Not Logged In",
-        description: "Please log in to connect with a partner"
-      });
+      sonnerToast.error("Not Logged In", { description: "Please log in first." });
+      return;
+    }
+    if (!partnerCode.trim()) {
+      sonnerToast.warning("Input Required", { description: "Please enter your partner's code." });
       return;
     }
 
+    setIsConnecting(true);
     try {
-      // Check if the code exists
+      const { data: existingMemberData } = await supabase
+        .from('couple_members')
+        .select('couple_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (existingMemberData) {
+        sonnerToast.info("Already Connected", { description: "You are already connected with a partner." });
+        navigate('/home');
+        return;
+      }
+
       const { data: coupleData, error: coupleError } = await supabase
         .from('couples')
         .select('id')
-        .eq('code', partnerCode)
-        .single();
+        .eq('code', partnerCode.trim().toUpperCase())
+        .maybeSingle();
 
       if (coupleError) throw coupleError;
 
       if (!coupleData) {
-        toast({
-          variant: "destructive",
-          title: "Invalid Code",
-          description: "The partner code you entered does not exist"
-        });
+        sonnerToast.error("Invalid Code", { description: "The partner code you entered does not exist." });
         return;
       }
 
-      // Add current user to the existing couple
       const { error: memberError } = await supabase
         .from('couple_members')
-        .insert({
-          couple_id: coupleData.id,
-          user_id: user.id
-        });
+        .insert({ couple_id: coupleData.id, user_id: user.id })
+        .select();
 
-      if (memberError) throw memberError;
+      if (memberError?.code === '23505') {
+        sonnerToast.info("Already Connected", { description: "You are already connected to this partner.", });
+        navigate('/home');
+        return;
+      } else if (memberError) {
+        throw memberError;
+      }
 
-      toast({
-        title: "Connected",
-        description: "Successfully connected with your partner"
-      });
+      sonnerToast.success("Connected!", { description: "Successfully connected with your partner." });
+      queryClient.invalidateQueries({ queryKey: ['coupleMembership', user?.id] });
+      queryClient.invalidateQueries({ queryKey: ['partnerMembership'] });
+      queryClient.invalidateQueries({ queryKey: ['partnerProfile'] });
+      queryClient.invalidateQueries({ queryKey: ['existingCoupleCode', user?.id] });
 
       navigate('/home');
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Connection Error",
-        description: "Failed to connect with partner"
+    } catch (error: any) {
+      sonnerToast.error("Connection Error", {
+        description: error?.message || "Failed to connect with partner."
       });
       console.error(error);
+    } finally {
+      setIsConnecting(false);
     }
   };
 
   const copyCodeToClipboard = () => {
     if (generatedCode) {
       navigator.clipboard.writeText(generatedCode);
-      toast({
-        title: "Code Copied",
-        description: "Your connection code has been copied to clipboard"
-      });
+      sonnerToast.info("Code Copied", { description: "Connection code copied to clipboard." });
     }
   };
+
+  if (isLoadingExistingCode) {
+    return (
+      <div className="app-container flex flex-col items-center justify-center px-4">
+        <Loader2 className="h-8 w-8 animate-spin text-couples-accent" />
+      </div>
+    );
+  }
 
   return (
     <div className="app-container flex flex-col items-center justify-center px-4">
@@ -145,115 +207,105 @@ const ConnectPartner = () => {
 
         <div className="bg-white rounded-lg shadow-sm p-5 mb-6">
           <div className="flex justify-center space-x-4 mb-6">
-            <button
-              onClick={() => setMethod('code')}
-              className={`px-4 py-2 rounded-full ${
-                method === 'code' 
-                  ? 'bg-couples-accent text-white' 
-                  : 'bg-couples-backgroundAlt text-couples-text'
-              }`}
+            <Button
+              variant={activeTab === 'generate' ? 'default' : 'outline'}
+              onClick={() => setActiveTab('generate')}
+              className={`rounded-full ${activeTab === 'generate' ? 'bg-couples-accent text-white hover:bg-couples-accent/90' : ''}`}
+            >
+              Generate
+            </Button>
+            <Button
+              variant={activeTab === 'useCode' ? 'default' : 'outline'}
+              onClick={() => setActiveTab('useCode')}
+              className={`rounded-full ${activeTab === 'useCode' ? 'bg-couples-accent text-white hover:bg-couples-accent/90' : ''}`}
             >
               Use Code
-            </button>
-            <button
-              onClick={() => setMethod('search')}
-              className={`px-4 py-2 rounded-full ${
-                method === 'search' 
-                  ? 'bg-couples-accent text-white' 
-                  : 'bg-couples-backgroundAlt text-couples-text'
-              }`}
-            >
-              Search
-            </button>
+            </Button>
           </div>
 
-          {method === 'code' ? (
+          {activeTab === 'generate' && (
             <div className="space-y-4">
               <div className="bg-couples-backgroundAlt p-4 rounded-lg text-center">
                 <p className="text-sm text-couples-text/70 mb-2">
-                  {generatedCode ? 'Your partner code' : 'Generate your code'}
+                  {generatedCode ? 'Your connection code' : 'Generate a code to share'}
                 </p>
-                <div className="flex items-center justify-center space-x-2">
+                <div className="flex items-center justify-center space-x-2 h-10">
                   {generatedCode ? (
                     <>
-                      <span className="text-xl font-medium">{generatedCode}</span>
-                      <button 
+                      <span className="text-xl font-medium tracking-widest">{generatedCode}</span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={copyCodeToClipboard}
                         className="text-couples-accent hover:text-couples-accent/80"
                       >
                         <Copy className="h-4 w-4" />
-                      </button>
+                      </Button>
                     </>
                   ) : (
-                    <Button 
+                    <Button
                       onClick={generateOwnCode}
-                      variant="secondary"
+                      disabled={isGeneratingCode}
                       className="w-full"
                     >
-                      Generate Code
+                      {isGeneratingCode ? (
+                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</>
+                      ) : (
+                        'Generate Code'
+                      )}
                     </Button>
                   )}
                 </div>
               </div>
-              
-              <form onSubmit={connectWithPartnerCode}>
-                <label htmlFor="partnerCode" className="block text-sm font-medium mb-1">
+              <p className="text-xs text-center text-couples-text/60 px-4">
+                Share this code with your partner. They can enter it in the "Use Code" tab.
+              </p>
+            </div>
+          )}
+
+          {activeTab === 'useCode' && (
+            <form onSubmit={connectWithPartnerCode} className="space-y-4">
+              <div>
+                <Label htmlFor="partnerCode" className="block text-sm font-medium mb-1">
                   Enter your partner's code
-                </label>
-                <input
+                </Label>
+                <Input
                   type="text"
                   id="partnerCode"
                   value={partnerCode}
                   onChange={(e) => setPartnerCode(e.target.value)}
-                  className="input-field"
-                  placeholder="Enter code (e.g. AB12C34)"
-                />
-                
-                <button 
-                  type="submit" 
-                  className="button-primary w-full mt-4"
-                  disabled={!partnerCode}
-                >
-                  Connect
-                </button>
-              </form>
-            </div>
-          ) : (
-            <form onSubmit={connectWithPartnerCode} className="space-y-4">
-              <div>
-                <label htmlFor="partnerUsername" className="block text-sm font-medium mb-1">
-                  Search by name or email
-                </label>
-                <input
-                  type="text"
-                  id="partnerUsername"
-                  value={partnerUsername}
-                  onChange={(e) => setPartnerUsername(e.target.value)}
-                  className="input-field"
-                  placeholder="John or john@example.com"
+                  className="input-field text-center tracking-widest"
+                  placeholder="ABCDEF"
+                  maxLength={6}
+                  autoCapitalize="characters"
+                  autoCorrect="off"
                 />
               </div>
-              
-              <button 
-                type="submit" 
+              <Button
+                type="submit"
                 className="button-primary w-full"
-                disabled={!partnerUsername}
+                disabled={!partnerCode || isConnecting}
               >
-                Search & Connect
-              </button>
+                {isConnecting ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Connecting...</>
+                ) : (
+                  'Connect'
+                )}
+              </Button>
             </form>
           )}
         </div>
 
         <div className="text-center">
           <p className="text-sm text-couples-text/70">
-            Skip for now and{' '}
-            <button 
-              onClick={() => navigate('/home')} 
-              className="text-couples-accent hover:underline"
+            {generatedCode ? 'Connected?' : 'Want to skip for now?'}{' '}
+            <Button
+              variant="link"
+              onClick={() => navigate('/home')}
+              className="text-couples-accent hover:underline p-1 h-auto"
             >
-              continue without a partner
-            </button>
+              Go to Home
+            </Button>
           </p>
         </div>
       </div>
