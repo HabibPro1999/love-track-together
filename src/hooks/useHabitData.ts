@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from "./use-toast"; // Adjusted path
@@ -36,6 +37,45 @@ export const useHabits = () => {
 
     const userId = user?.id;
     const partnerId = partner?.id;
+
+    // Set up real-time subscriptions when the query mounts
+    useEffect(() => {
+        if (!userId) return;
+
+        // Subscribe to habits changes
+        const habitsSubscription = supabase
+            .channel('habits-changes')
+            .on('postgres_changes', 
+                { event: '*', schema: 'public', table: 'habits' },
+                (payload) => {
+                    // Refetch habits when any change occurs
+                    queryClient.invalidateQueries({ 
+                        queryKey: ['habits', getTodayDateString(), userId, partnerId]
+                    });
+                }
+            )
+            .subscribe();
+
+        // Subscribe to habit completions changes
+        const completionsSubscription = supabase
+            .channel('completions-changes')
+            .on('postgres_changes',
+                { event: '*', schema: 'public', table: 'habit_completions' },
+                (payload) => {
+                    // Refetch habits when completions change
+                    queryClient.invalidateQueries({
+                        queryKey: ['habits', getTodayDateString(), userId, partnerId]
+                    });
+                }
+            )
+            .subscribe();
+
+        // Cleanup subscriptions on unmount
+        return () => {
+            habitsSubscription.unsubscribe();
+            completionsSubscription.unsubscribe();
+        };
+    }, [userId, partnerId, queryClient]);
 
     return useQuery<HabitWithCompletion[], Error>({
         // Include userId and partnerId in queryKey to refetch if they change
@@ -314,8 +354,48 @@ export type HabitDetailData = Tables<'habits'> & {
  * NOTE: This hook might need updating if detail view needs partner completion status too.
  */
 export const useHabitDetail = (habitId: string | undefined) => {
+    const queryClient = useQueryClient();
     const { user } = useAuth(); // Need user for optimistic update key
     const { partner } = usePartnerData(); // Need partner for optimistic update key
+
+    // Set up real-time subscriptions for habit details
+    useEffect(() => {
+        if (!habitId) return;
+
+        // Subscribe to habit changes
+        const habitSubscription = supabase
+            .channel('habit-detail-changes')
+            .on('postgres_changes',
+                { event: '*', schema: 'public', table: 'habits', filter: `id=eq.${habitId}` },
+                (payload) => {
+                    // Refetch habit details when the habit changes
+                    queryClient.invalidateQueries({ 
+                        queryKey: ['habits', 'detail', habitId]
+                    });
+                }
+            )
+            .subscribe();
+
+        // Subscribe to habit completion changes
+        const completionsSubscription = supabase
+            .channel('habit-detail-completions')
+            .on('postgres_changes',
+                { event: '*', schema: 'public', table: 'habit_completions', filter: `habit_id=eq.${habitId}` },
+                (payload) => {
+                    // Refetch habit details when completions change
+                    queryClient.invalidateQueries({
+                        queryKey: ['habits', 'detail', habitId]
+                    });
+                }
+            )
+            .subscribe();
+
+        // Cleanup subscriptions
+        return () => {
+            habitSubscription.unsubscribe();
+            completionsSubscription.unsubscribe();
+        };
+    }, [habitId, queryClient]);
 
     return useQuery<HabitDetailData | null, Error>({
         // Add user/partner to key if detail needs to react to their changes,

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Heart, Plus, Loader2, CalendarDays, PenLine } from 'lucide-react';
 import BottomNav from '../components/BottomNav';
@@ -16,6 +16,7 @@ import {
 import { usePartnerNote, useSendNote } from '@/hooks/useNoteData';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from "@/components/ui/skeleton";
+import Confetti from 'react-confetti';
 
 // Enhanced StickyNote component - Now display only
 const EnhancedStickyNote = ({ content, author, hasNote = false }) => {
@@ -45,6 +46,11 @@ const Home = () => {
   const navigate = useNavigate();
   const [noteContent, setNoteContent] = useState('');
   const [showNoteDialog, setShowNoteDialog] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [windowSize, setWindowSize] = useState({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
 
   // Use authentication context
   const { user } = useAuth();
@@ -124,21 +130,103 @@ const Home = () => {
     return partner?.name || 'your partner';
   }, [partner]);
 
-  // Calculate completion percentage (only when habits are loaded)
+  // Calculate relevant habits (own + shared) for progress bar
+  const relevantHabits = useMemo(() => {
+    if (!todaysHabits || !user) return [];
+    // Only include my personal habits and shared habits (not partner's habits)
+    return todaysHabits.filter(habit => 
+      habit.couple_id !== null || // shared habits
+      (habit.couple_id === null && habit.user_id === user.id) // my personal habits
+    );
+  }, [todaysHabits, user]);
+
+  // Calculate completion percentage for progress bar
   const completionPercentage = useMemo(() => {
-    if (!todaysHabits.length || isLoadingHabits) return 0; // Return 0 if loading
-    const completedCount = todaysHabits.filter(h => h.isCompletedToday).length;
-    return Math.round((completedCount / todaysHabits.length) * 100);
-  }, [todaysHabits, isLoadingHabits]);
+    if (!relevantHabits || relevantHabits.length === 0) return 0;
+    const completedCount = relevantHabits.filter(h => h.isCompletedToday).length;
+    return Math.round((completedCount / relevantHabits.length) * 100);
+  }, [relevantHabits]);
 
   // *** Unified Loading State for Core Content ***
   const isCoreLoading = isLoadingPartner || isLoadingHabits;
   // Note loading is handled separately within its section
 
+  // Check if all habits are completed
+  const allHabitsCompleted = useMemo(() => {
+    // Only consider my personal habits and shared habits
+    const relevantHabits = [...myPersonalHabits, ...sharedHabits];
+
+    // If there are no habits, we don't show celebration
+    if (relevantHabits.length === 0) return false;
+
+    // Check if all relevant habits are completed
+    return relevantHabits.every(habit => habit.isCompletedToday);
+  }, [myPersonalHabits, sharedHabits]);
+
+  // Track previous completion state to detect changes
+  const [prevCompletedCount, setPrevCompletedCount] = useState(0);
+  
+  // Get today's date for storage key
+  const todayStorageKey = useMemo(() => {
+    const today = new Date();
+    return `celebration-shown-${today.toISOString().split('T')[0]}`;
+  }, []);
+  
+  // Check if celebration was already shown today
+  const [celebrationShownToday, setCelebrationShownToday] = useState(() => {
+    return localStorage.getItem(todayStorageKey) === 'true';
+  });
+  
+  // Effect to show confetti only when completing the last habit
+  useEffect(() => {
+    if (!relevantHabits.length) return;
+    if (celebrationShownToday) return; // Skip if already shown today
+    
+    const currentCompletedCount = relevantHabits.filter(h => h.isCompletedToday).length;
+    
+    // Only show celebration when:
+    // 1. All habits are now completed
+    // 2. The completed count has increased (meaning we just completed a habit)
+    // 3. We've completed the last remaining habit (current = total and previous < total)
+    if (allHabitsCompleted && 
+        currentCompletedCount > prevCompletedCount && 
+        currentCompletedCount === relevantHabits.length && 
+        prevCompletedCount < relevantHabits.length) {
+      
+      // Mark as shown today
+      localStorage.setItem(todayStorageKey, 'true');
+      setCelebrationShownToday(true);
+      
+      // Show the celebration
+      setShowConfetti(true);
+      
+      // Hide confetti after 5 seconds
+      const timer = setTimeout(() => setShowConfetti(false), 5000);
+      return () => clearTimeout(timer);
+    }
+    
+    // Update previous count for next comparison
+    setPrevCompletedCount(currentCompletedCount);
+  }, [allHabitsCompleted, relevantHabits, celebrationShownToday, todayStorageKey]);
+
+  // Update window size for confetti
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowSize({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // Mutations for completing/uncompleting habits
   const completeHabit = useCompleteHabit();
   const deleteCompletion = useDeleteCompletion();
 
+  // Toggle habit completion
   const toggleHabit = (id, isCompleted, completionId) => {
     if (!id) return;
     if (isCompleted && completionId) {
@@ -213,8 +301,25 @@ const Home = () => {
           {todayFormatted}
         </p>
       </header>
-
       <main className="px-4">
+        {showConfetti && (
+          <>
+            <div className="fixed inset-0 z-50 pointer-events-none">
+              <Confetti
+                width={windowSize.width}
+                height={windowSize.height}
+                recycle={false}
+                numberOfPieces={200}
+                gravity={0.2}
+                colors={['#FF5E87', '#FF8DA1', '#FFC2D1', '#FFD6E0', '#FFE9EF']}
+              />
+            </div>
+            <div className="fixed top-1/3 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 bg-white/90 rounded-lg p-4 shadow-lg border-2 border-couples-accent animate-bounce text-center">
+              <h3 className="text-xl font-bold text-couples-accent mb-1">Amazing job! 🎉</h3>
+              <p className="text-couples-text">You've completed all your habits for today!</p>
+            </div>
+          </>
+        )}
         {/* --- Note Section --- */}
         {/* Show skeleton if core data is loading OR note specifically is loading */}
         {(isCoreLoading || isLoadingNote) ? (
@@ -289,15 +394,15 @@ const Home = () => {
         ) : (
           // Actual Habits Content (Progress Bar + List)
           <>
-            {/* Progress Bar - Render only if habits exist */}
-            {todaysHabits.length > 0 && (
+            {/* Progress Bar - Render only if relevant habits exist */}
+            {relevantHabits.length > 0 && (
               <div className="mb-4">
                 <div className="flex justify-between items-center mb-1.5">
                   <span className="text-sm font-medium">
                     Daily Progress
                   </span>
                   <span className="text-sm text-couples-text/70">
-                    {todaysHabits.filter(h => h.isCompletedToday).length} of {todaysHabits.length} completed
+                    {relevantHabits.filter(h => h.isCompletedToday).length} of {relevantHabits.length} completed
                   </span>
                 </div>
                 <div className="h-2.5 w-full bg-couples-backgroundAlt/50 rounded-full overflow-hidden">

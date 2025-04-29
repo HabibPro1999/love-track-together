@@ -77,6 +77,7 @@ const HabitDetail = () => {
   // --- Derived Data & Logic (MOVED UP) ---
   const isShared = useMemo(() => habit?.couple_id !== null, [habit]);
   const isPersonal = useMemo(() => habit?.couple_id === null, [habit]);
+  const isOwner = useMemo(() => habit?.user_id === user?.id, [habit, user]);
   const partnerName = useMemo(() => partner?.name || 'Partner', [partner]);
 
   const today = useMemo(() => {
@@ -424,29 +425,28 @@ const HabitDetail = () => {
           </div>
         </section>
 
-        <div className="flex-grow min-h-[20vh]"></div>
-
-        <section className="fixed bottom-20 left-0 right-0 p-4 bg-couples-background border-t border-couples-backgroundAlt">
-          <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
-            <Button
-              variant="outline"
-              onClick={() => setShowEditDialog(true)}
-              className="flex items-center justify-center gap-2"
-            >
-              <Edit2 className="h-4 w-4" />
-              <span>Edit</span>
-            </Button>
-
-            <Button
-              variant="destructive"
-              onClick={() => setShowDeleteDialog(true)}
-              className="flex items-center justify-center gap-2"
-            >
-              <Trash2 className="h-4 w-4" />
-              <span>Delete</span>
-            </Button>
-          </div>
-        </section>
+        {isOwner && (
+          <section className="p-4 border-t border-couples-backgroundAlt">
+            <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
+              <Button
+                variant="outline"
+                onClick={() => setShowEditDialog(true)}
+                className="flex items-center justify-center gap-2"
+              >
+                <Edit2 className="h-4 w-4" />
+                <span>Edit</span>
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => setShowDeleteDialog(true)}
+                className="flex items-center justify-center gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                <span>Delete</span>
+              </Button>
+            </div>
+          </section>
+        )}
       </main>
 
       <BottomNav />
